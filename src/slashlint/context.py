@@ -132,3 +132,36 @@ def response_method(call, param):
     
     return None
 
+def build_context(path, func):
+    # not a command, nothing to analyze
+    if not is_slash_command(func):
+        return None
+    
+    # cant find interaction arg, stay silent
+    param = interaction_param(func)
+    if param is None:
+        return None
+    
+    calls = ordered_calls(func)
+    
+    # classify every call once
+    methods = [response_method(c, param) for c in calls]
+    
+    has_defer = any(m == DEFER_METHOD for m in methods)
+    
+    first_response_index = None
+    for i, m in enumerate(methods):
+        if m is not None:
+            first_response_index = i
+            break
+        
+    # return a commandcontext object with the gathered info   
+    return CommandContext(
+        path=path,
+        name=func.name,
+        lineno=func.lineno,
+        interaction_param=param,
+        calls=tuple(calls),
+        first_response_index=first_response_index,
+        has_defer=has_defer,
+    )
