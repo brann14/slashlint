@@ -26,9 +26,9 @@ class CommandContext:
     
     # property to get calls before the first response
     @property
-    def calls_before_request(self):
+    def calls_before_response(self):
         if self.first_response_index is None:
-            return self.calls
+            return ()
         return self.calls[:self.first_response_index]
 
 # main logic
