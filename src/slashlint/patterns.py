@@ -17,3 +17,14 @@ UI_CALLBACK_SUFFIXES = (
     "channel_select",
     "mentionable_select",
 )
+
+# methods on <interaction>.response that consume the initial interaction token
+RESPONSE_METHODS = (
+    "defer",
+    "send_message",
+    "send_modal",
+    "edit_message",
+    "pong",
+)
+
+DEFER_METHOD = "defer"

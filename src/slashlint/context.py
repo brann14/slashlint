@@ -7,11 +7,29 @@ import ast
 from dataclasses import dataclass
 from pathlib import Path
 
-from slashlint.patterns import COMMAND_DECORATOR_SUFFIXES, UI_CALLBACK_SUFFIXES
+from slashlint.patterns import COMMAND_DECORATOR_SUFFIXES, UI_CALLBACK_SUFFIXES, RESPONSE_METHODS, DEFER_METHOD
 
 # utility & config
 
 FunctionNode = ast.FunctionDef | ast.AsyncFunctionDef
+
+# commandcontext dataclass
+@dataclass(frozen=True)
+class CommandContext:
+    path: Path
+    name: str
+    lineno: int
+    interaction_param: str
+    calls: tuple[ast.Call, ...]
+    first_response_index: int | None
+    has_defer: bool
+    
+    # property to get calls before the first response
+    @property
+    def calls_before_request(self):
+        if self.first_response_index is None:
+            return self.calls
+        return self.calls[:self.first_response_index]
 
 # main logic
 
@@ -74,4 +92,43 @@ def interaction_param(func):
     # plain function, the first parametar in the interaction
     return args[0].arg
 
-# rest to be made
+def ordered_calls(func):
+    found = []
+    
+    def visit (node):
+        # nested functiion or lambda
+        if isinstance(node, (FunctionNode, ast.Lambda)):
+            return
+        
+        if isinstance(node, ast.Call):
+            # append node to the founds list
+            found.append(node)
+            
+        for child in ast.iter_child_nodes(node):
+            visit(child)
+            
+    for stmt in func.body:
+        visit(stmt)
+        
+    return found
+            
+def response_method(call, param):
+    name = dotted_name(call.func)
+    if name is None:
+        return None
+    
+    # get the prefix of the command
+    prefix = f"{param}.response."
+    
+    # check if the name starts with the prefix, if not return None
+    if not name.startswith(prefix):
+        return None
+    
+    # method
+    method = name.rsplit(".", 1)[-1]
+    
+    if method in RESPONSE_METHODS:
+        return method
+    
+    return None
+
