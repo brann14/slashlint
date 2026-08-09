@@ -165,3 +165,18 @@ def build_context(path, func):
         first_response_index=first_response_index,
         has_defer=has_defer,
     )
+
+def contexts_from_module(path, tree):
+    # contexts is a list of commandcontext objects
+    contexts = []
+    
+    # iterate over all nodes in the ast tree
+    for node in ast.walk(tree):
+        if not isinstance(node, FunctionNode):
+            continue
+        
+        ctx = build_context(path, node)
+        if ctx is not None:
+            contexts.append(ctx)
+            
+    return contexts
