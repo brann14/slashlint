@@ -249,3 +249,72 @@ async def ban(self, interaction, member):
     # lineno points at the def, not the decorator
     assert ctx.lineno == 3
     assert ctx.interaction_param == "interaction"
+
+# a realistic module > cog commands, a module level one, a group one,
+# a view whose button callback shares a name with a real command
+MODULE = '''
+import discord
+from discord import app_commands
+from discord.ext import commands
+
+def helper(x):
+    return db.execute(x)
+
+@app_commands.command()
+async def ping(interaction):
+    await interaction.response.send_message("pong")
+
+class Moderation(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
+
+    @app_commands.command(name="ban")
+    @app_commands.describe(member="who")
+    async def ban(self, interaction, member):
+        case = await self.db.execute("insert ...")
+        await member.add_roles(self.muted)
+        await interaction.response.send_message(f"#{case}")
+
+    @app_commands.command()
+    async def warn(self, itx, member):
+        await itx.response.defer()
+        await self.db.execute("insert ...")
+
+class ConfirmView(discord.ui.View):
+    @discord.ui.button(label="Confirm")
+    async def ban(self, interaction, button):
+        await self.db.execute("insert ...")
+        await interaction.response.send_message("ok")
+
+group = app_commands.Group(name="cfg", description="")
+
+@group.command()
+async def show(interaction):
+    await api.fetch_settings()
+    await interaction.response.send_message("x")
+'''
+
+def module_contexts():
+    return contexts_from_module(Path("bot.py"), ast.parse(MODULE))
+
+def test_contexts_from_module_finds_commands_in_cogs():
+    # tree.body would only see the top level and miss the cog methods
+    assert sorted(c.name for c in module_contexts()) == ["ban", "ping", "show", "warn"]
+
+def test_contexts_from_module_skips_helpers_and_init():
+    names = [c.name for c in module_contexts()]
+    assert "helper" not in names
+    assert "__init__" not in names
+
+def test_contexts_from_module_excludes_ui_callback_sharing_a_name():
+    # the view has a button callback also called ban, only the command survives
+    ctxs = module_contexts()
+    assert [c.name for c in ctxs].count("ban") == 1
+    ban = next(c for c in ctxs if c.name == "ban")
+    assert [dotted_name(x.func) for x in ban.calls_before_response] == [
+        "self.db.execute",
+        "member.add_roles",
+    ]
+
+def test_contexts_from_module_empty():
+    assert contexts_from_module(Path("bot.py"), ast.parse("x = 1\n")) == []
