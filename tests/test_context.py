@@ -24,7 +24,7 @@ def parse_func(src):
     ("a", "a"),
     ("a.b", "a.b"),
     ("discord.ui.button", "discord.ui.button"),
-    ("f().x", "f().x"),
+    ("f().x", None),
 ])
 def test_dotted_name (expr, expected):
     node = ast.parse(expr, mode="eval").body
