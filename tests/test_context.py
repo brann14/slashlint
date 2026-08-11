@@ -77,3 +77,15 @@ def test_ui_reject_beats_command_accept():
         'async def f(self, interaction): pass\n'
     )
     assert is_slash_command(func) is False
+
+@pytest.mark.parametrize("signature, expected", [
+    ("self, interaction, member", "interaction"),
+    ("itx", "itx"),
+    ("cls, inter", "inter"),
+    # unrecognised signature > None > caller drops the function
+    ("self", None),
+    ("", None),
+])
+def test_interaction_param(signature, expected):
+    func = parse_func(f"async def f({signature}): pass\n")
+    assert interaction_param(func) == expected
