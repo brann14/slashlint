@@ -3,6 +3,7 @@
 # imports
 
 import ast
+from pathlib import Path
 
 import pytest
 
@@ -160,3 +161,91 @@ async def cmd(self, interaction):
 def test_response_method(expr, param, expected):
     call = ast.parse(expr, mode="eval").body
     assert response_method(call, param) == expected
+
+def summary(src):
+    # build_context > (has_defer, first_response_index, names before the response)
+    ctx = build_context(Path("bot.py"), parse_func(src))
+    if ctx is None:
+        return None
+    return (ctx.has_defer, ctx.first_response_index,
+            [dotted_name(c.func) for c in ctx.calls_before_response])
+
+def test_build_context_io_before_response():
+    # the SL001 shape > no defer, two io calls before the response
+    assert summary('''
+@app_commands.command()
+async def ban(self, interaction, member):
+    case = await db.execute("insert ...")
+    await member.add_roles(role)
+    await interaction.response.send_message(f"done {case}")
+''') == (False, 2, ["db.execute", "member.add_roles"])
+
+def test_build_context_defers_first():
+    assert summary('''
+@app_commands.command()
+async def ban(self, interaction, member):
+    await interaction.response.defer()
+    await db.execute("insert ...")
+''') == (True, 0, [])
+
+def test_build_context_late_defer():
+    # defer after io > has_defer is still True, so sl001 stays quiet
+    assert summary('''
+@app_commands.command()
+async def ban(self, interaction, member):
+    await db.execute("x")
+    await interaction.response.defer()
+''') == (True, 1, ["db.execute"])
+
+def test_build_context_never_responds():
+    # no response at all > index None > empty slice, not everything
+    assert summary('''
+@app_commands.command()
+async def ban(self, interaction, member):
+    await db.execute("x")
+''') == (False, None, [])
+
+def test_build_context_first_response_wins():
+    # break in the loop > first response, not last
+    assert summary('''
+@app_commands.command()
+async def ban(self, interaction, member):
+    await interaction.response.defer()
+    await db.execute("x")
+    await interaction.response.send_message("hi")
+''') == (True, 0, [])
+
+def test_build_context_custom_param_name():
+    assert summary('''
+@app_commands.command()
+async def ban(self, itx, member):
+    await db.execute("x")
+    await itx.response.defer()
+''') == (True, 1, ["db.execute"])
+
+def test_build_context_rejects_ui_callback():
+    assert summary('''
+@discord.ui.button(label="Ban")
+async def ban(self, interaction, button):
+    await db.execute("x")
+    await interaction.response.send_message("ok")
+''') is None
+
+def test_build_context_rejects_unknown_signature():
+    assert summary('''
+@app_commands.command()
+async def ban(self):
+    await db.execute("x")
+''') is None
+
+def test_build_context_fields():
+    ctx = build_context(Path("bot.py"), parse_func('''
+@app_commands.command()
+async def ban(self, interaction, member):
+    await interaction.response.defer()
+'''))
+    assert ctx.path == Path("bot.py")
+    assert ctx.name == "ban"
+    # lineno points at the def, not the decorator
+    assert ctx.lineno == 3
+    assert ctx.interaction_param == "interaction"
