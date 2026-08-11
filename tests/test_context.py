@@ -11,6 +11,7 @@ from slashlint.context import (
     decorator_names,
     is_slash_command,
     interaction_param,
+    ordered_calls,
     response_method,
     build_context,
     contexts_from_module,
@@ -89,3 +90,55 @@ def test_ui_reject_beats_command_accept():
 def test_interaction_param(signature, expected):
     func = parse_func(f"async def f({signature}): pass\n")
     assert interaction_param(func) == expected
+
+def call_names(func):
+    # calls > their dotted names, easier to assert on
+    return [dotted_name(c.func) for c in ordered_calls(func)]
+
+def test_ordered_calls_source_order():
+    # the case ast.walk gets wrong > it puts defer before db.execute
+    func = parse_func('''
+async def cmd(self, interaction, member):
+    if is_admin(member):
+        await db.execute("x")
+    await interaction.response.defer()
+''')
+    assert call_names(func) == ["is_admin", "db.execute", "interaction.response.defer"]
+
+def test_ordered_calls_skips_nested_def():
+    # nested body does not run before the response
+    func = parse_func('''
+async def cmd(self, interaction):
+    a()
+    async def helper():
+        never_seen()
+    b()
+''')
+    assert call_names(func) == ["a", "b"]
+
+def test_ordered_calls_skips_lambda():
+    func = parse_func('''
+async def cmd(self, interaction):
+    a()
+    f = lambda: hidden()
+    b()
+''')
+    assert call_names(func) == ["a", "b"]
+
+def test_ordered_calls_outer_before_args():
+    # a call is recorded then we keep descending into its args
+    func = parse_func('''
+async def cmd(self, interaction):
+    await db.execute(build_query(table_name()))
+''')
+    assert call_names(func) == ["db.execute", "build_query", "table_name"]
+
+def test_ordered_calls_ignores_decorators():
+    # we start at func.body, not func
+    func = parse_func('''
+@app_commands.command(name="ban")
+@app_commands.describe(x="y")
+async def cmd(self, interaction):
+    only_this()
+''')
+    assert call_names(func) == ["only_this"]
