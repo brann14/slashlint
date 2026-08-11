@@ -142,3 +142,21 @@ async def cmd(self, interaction):
     only_this()
 ''')
     assert call_names(func) == ["only_this"]
+
+@pytest.mark.parametrize("expr, param, expected", [
+    ("interaction.response.defer()", "interaction", "defer"),
+    ('interaction.response.send_message("h")', "interaction", "send_message"),
+    ("interaction.response.send_modal(m)", "interaction", "send_modal"),
+    # the name comes off the signature, nothing is hardcoded
+    ("itx.response.defer()", "itx", "defer"),
+    ("interaction.response.defer()", "itx", None),
+    # followup only works after you already responded
+    ('interaction.followup.send("h")', "interaction", None),
+    ("interaction.response.pretend()", "interaction", None),
+    ('db.execute("x")', "interaction", None),
+    # left side is a call > dotted_name gives None > we stay quiet
+    ("get_thing().response.defer()", "interaction", None),
+])
+def test_response_method(expr, param, expected):
+    call = ast.parse(expr, mode="eval").body
+    assert response_method(call, param) == expected
